@@ -1,54 +1,90 @@
+""" Run a jfx_bridge_ida client to remotely communicate with a jfx_bridge_ida server
+running in an IDA instance """
+
 import sys
-import weakref
-import pydoc
 
 from jfx_bridge import bridge
 
 from .server.jfx_bridge_ida_port import DEFAULT_SERVER_PORT
 
-""" Use this list to exclude modules and names loaded by the remote jfx_bridge_ida side from being loaded into namespaces (they'll 
-still be present in the BridgedObject for the __main__ module. This prevents the jfx_bridge_ida imported by jfx_bridge_ida_server 
-being loaded over the local jfx_bridge_ida and causing issues. You probably only want this for stuff imported by the jfx_bridge_ida_server
-script that might conflict on the local side (or which is totally unnecessary on the local side, like GhidraBridgeServer).
-"""
-EXCLUDED_REMOTE_IMPORTS = ["logging", "subprocess", "sys",
-                           "jfx_bridge_ida", "bridge", "IDABridgeServer"]
 
-class IDABridge():
-    def __init__(self, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=DEFAULT_SERVER_PORT, loglevel=None, namespace=None, interactive_mode=None, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT):
-        """ Set up a bridge. Default settings connect to the default ghidra bridge server,
+class IDABridge:
+    idc = None
+    idaapi = None
+    idautils = None
+    sark = None
 
-        If namespace is specified (e.g., locals() or globals()), automatically calls get_flat_api() with that namespace. 
+    def __init__(
+        self,
+        connect_to_host=bridge.DEFAULT_HOST,
+        connect_to_port=DEFAULT_SERVER_PORT,
+        loglevel=None,
+        response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT,
+        do_import=True,
+    ):
+        """ Set up a bridge. Default settings connect to the default jfx_bridge_ida server
 
         loglevel for what logging messages you want to capture
 
-        interactive_mode should auto-detect interactive environments (e.g., ipython or not in a script), but 
-        you can force it to True or False if you need to. False is normal ghidra script behaviour 
-        (currentAddress/getState() etc locked to the values when the script started. True is closer to the 
-        behaviour in the Ghidra Jython shell - current*/getState() reflect the current values in the GUI
-
         response_timeout is how long to wait for a response before throwing an exception, in seconds
-        """
+        
+        If do_import is true, gets the remote idaapi, idc and idautils modules and loads them into sys.modules,
+        to make importing sark locally easy"""
         self.bridge = bridge.BridgeClient(
-            connect_to_host=connect_to_host, connect_to_port=connect_to_port, loglevel=loglevel, response_timeout=response_timeout)
+            connect_to_host=connect_to_host,
+            connect_to_port=connect_to_port,
+            loglevel=loglevel,
+            response_timeout=response_timeout,
+        )
 
-  
+        if do_import:
+            self.get_idaapi(do_import=True)
+            self.get_idc(do_import=True)
+            self.get_idautils(do_import=True)
 
-    def get_idaapi(self):
-        """ get the ghidra api - `ghidra = bridge.get_ghidra_api()` equivalent to doing `import ghidra` in your script.
-            Note that the module returned from get_flat_api() will also contain the ghidra module, so you may not need to call this.
-        """
-        idaapi = self.bridge.remote_import("idaapi")
-        sys.modules["idaapi"] = idaapi
-        return idaapi
+    def get_idaapi(self, do_import=False):
+        """ Get the idaapi from the remote connection. 
+        If do_import is true, store it into sys.modules so other things can import it easily
+         - you probably don't want this, use do_import when setting up the bridge instead """
+        if self.idaapi is None:
+            self.idaapi = self.bridge.remote_import("idaapi")
 
-    def get_idc(self):
-        idc = self.bridge.remote_import("idc")
-        sys.modules["idc"] = idc
-        return idc
+        if do_import:
+            sys.modules["idaapi"] = self.idaapi
 
-    def get_idautils(self):
-        idautils = self.bridge.remote_import("idautils")
-        sys.modules["idautils"] = idautils
-        return idautils
+        return self.idaapi
 
+    def get_idc(self, do_import=False):
+        """ Get the idc module from the remote connection. 
+        If do_import is true, store it into sys.modules so other things can import it easily
+        - you probably don't want this, use do_import when setting up the bridge instead """
+        if self.idc is None:
+            self.idc = self.bridge.remote_import("idc")
+
+        if do_import:
+            sys.modules["idc"] = self.idc
+
+        return self.idc
+
+    def get_idautils(self, do_import=False):
+        """ Get the idautils module from the remote connection. 
+        If do_import is true, store it into sys.modules so other things can import it easily
+        - you probably don't want this, use do_import when setting up the bridge instead """
+        if self.idautils is None:
+            self.idautils = self.bridge.remote_import("idautils")
+
+        if do_import:
+            sys.modules["idautils"] = self.idautils
+
+        return self.idautils
+
+    def get_sark(self, do_import=False):
+        """ Import sark from the remote IDA context 
+            If do_import is true, store it into sys.modules so other things can import it easily - you probably don't want this """
+        if self.sark is None:
+            self.sark = self.bridge.remote_import("sark")
+
+        if do_import:
+            sys.modules["sark"] = self.sark
+
+        return self.sark

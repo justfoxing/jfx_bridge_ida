@@ -1,0 +1,78 @@
+version: 2
+
+workflows:
+  version: 2
+  test-build-release:
+    jobs:
+      - build:
+          filters:
+            tags:
+              only: /.*/
+      - release-pypi:
+          requires:
+            - build
+          filters:
+            tags:
+              only: /^\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
+      - release-github:
+          requires:
+            - build
+          filters:
+            tags:
+              only: /^\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
+jobs:            
+  build:
+    docker:
+      - image: circleci/python:3.7.2
+
+    working_directory: ~/repo
+
+    steps:
+      - checkout
+
+      - run:
+          name: Build jfx_bridge_ida package
+          command: |
+            pip3 install --user --upgrade setuptools # make sure we've got the latest version, to support using Markdown
+            python3 setup.py sdist bdist_wheel --universal
+
+      - store_artifacts:
+          path: dist
+          
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist/
+  
+  release-pypi:
+    docker:
+      - image: circleci/python:3.7.2
+    steps:
+      - run:
+          name: Get twine
+          command: |
+            pip3 install --user --upgrade twine
+      - attach_workspace:
+          at: ./workspace     
+      - run:
+          name: upload to pypi
+          command: |
+            python3 -m twine upload ./workspace/dist/*
+            
+  release-github:
+    docker:
+      - image: cibuilds/github:0.12
+    steps:
+      - checkout
+      - attach_workspace:
+          at: ./workspace
+      - run:
+          name: upload to github
+          command: |
+            VERSION=$(git describe)
+            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} ./workspace/dist/            
+        

@@ -1,104 +1,135 @@
-# Run a ghidra_bridge server for external python environments to interact with
-# @author justfoxing
-# @category Bridge
+""" Run a jfx_bridge_ida server for external python environments to interact with """
 
-# NOTE: any imports here may need to be excluded in ghidra_bridge
 import logging
 import subprocess
-import sys
-import threading
 import functools
 from jfx_bridge import bridge
 from jfx_bridge_ida_port import DEFAULT_SERVER_PORT
 
-# NOTE: we definitely DON'T want to exclude ghidra from ghidra_bridge :P
 import idaapi
-import idc
-import idautils
 
+# IDA specific hooking
+# IDA 7.2 requires all APIs not explicitly marked THREAD_SAFE to be called from the main thread. It provides
+# the idaapi.execute_sync function to carry this out, which takes a python callable to run, and returns an
+# int.
+#
+# To handle this, we hook the local_call function in the bridge, and wrap whatever we were going to call in
+# a bound callable that provides a way to return an arbitrary result, then pass that bound callable to execute_sync.
 
-class IDABridgeServer(object):
-    """ Class mostly used to collect together functions and variables that we don't want contaminating the global namespace
-        variables set in remote clients
-
-        NOTE: this class needs to be excluded from ghidra_bridge - it doesn't need to be in the globals, if people want it and
-        know what they're doing, they can get it from the BridgedObject for the main module
-    """
-
-    @staticmethod
-    def run_server(server_host=bridge.DEFAULT_HOST, server_port=DEFAULT_SERVER_PORT, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT):
-        """ Run a ghidra_bridge_server (forever)
-            server_host - what address the server should listen on
-            server_port - what port the server should listen on
-        """
-        bridge.BridgeServer(server_host=server_host,
-                            server_port=server_port, loglevel=logging.INFO, response_timeout=response_timeout).run()
-
-    @staticmethod
-    def run_script_across_ghidra_bridge(script_file, python="python", argstring=""):
-        """ Spin up a ghidra_bridge_server and spawn the script in external python to connect back to it. Useful in scripts being triggered from
-            inside ghidra that need to use python3 or packages that don't work in jython
-
-            The called script needs to handle the --connect_to_host and --connect_to_port command-line arguments and use them to start
-            a ghidra_bridge client to talk back to the server.
-
-            Specify python to control what the script gets run with. Defaults to whatever python is in the shell - if changing, specify a path
-            or name the shell can find.
-            Specify argstring to pass further arguments to the script when it starts up.
-        """
-
-        # spawn a ghidra bridge server - use server port 0 to pick a random port
-        server = bridge.BridgeServer(
-            server_host="127.0.0.1", server_port=0, loglevel=logging.INFO)
-        # start it running in a background thread
-        server.start()
-
-        try:
-            # work out where we're running the server
-            server_host, server_port = server.bridge.get_server_info()
-
-            print("Running " + script_file)
-
-            # spawn an external python process to run against it
-
-            try:
-                output = subprocess.check_output("{python} {script} --connect_to_host={host} --connect_to_port={port} {argstring}".format(
-                    python=python, script=script_file, host=server_host, port=server_port, argstring=argstring), stderr=subprocess.STDOUT, shell=True)
-                print(output)
-            except subprocess.CalledProcessError as exc:
-                print("Failed ({}):{}".format(exc.returncode, exc.output))
-
-            print(script_file + " completed")
-
-        finally:
-            # when we're done with the script, shut down the server
-            server.bridge.shutdown()
-            
-   
-   
-real_local_call = bridge.BridgeConn.local_call
 
 class WrapperReturn(object):
+    """ class to return an arbitrary result """
+
     result = None
 
-def local_call_on_main_thread_wrapper(return_object, bridge_conn, args_dict):
-    return_object.result = real_local_call(bridge_conn, args_dict)
-    
+
+def wrapper_local_call_on_main_thread(return_object, bridge_conn, args_dict):
+    """ Wrapper to handle calling local_call on the main IDA thread after being run through execute_sync.
+        Will execute the real local_call and pass the result back to the return_object provided """
+    return_object.result = REAL_LOCAL_CALL(bridge_conn, args_dict)
+
     return 0
-    
-def local_call_execute_on_main_thread_wrapper(bridge_conn, args_dict):
+
+
+def hook_local_call_execute_on_main_thread(bridge_conn, args_dict):
+    """ Hook the real local_call and handle generating a bound callable that will give us an arbitrary result back """
+    # where we get our result
     return_object = WrapperReturn()
 
-    prepped = functools.partial(local_call_on_main_thread_wrapper, return_object, bridge_conn, args_dict)
-    
-    idaapi.execute_sync(prepped, idaapi.MFF_FAST)
-    
+    # bind it into the callable wrapper
+    bound_callable = functools.partial(
+        wrapper_local_call_on_main_thread, return_object, bridge_conn, args_dict
+    )
+
+    # run it on the main thread.
+    # Note: there's a few different options for MFF_ flags - MFF_FAST seems to work, but I'm as yet not sure if it has thread safety issues
+    idaapi.execute_sync(bound_callable, idaapi.MFF_FAST)
+
+    # and we're done!
     return return_object.result
 
+
+# record what the real local_call is, then replace it with the hook
+REAL_LOCAL_CALL = bridge.BridgeConn.local_call
+bridge.BridgeConn.local_call = hook_local_call_execute_on_main_thread
+
+
+def run_server(
+    server_host=bridge.DEFAULT_HOST,
+    server_port=DEFAULT_SERVER_PORT,
+    response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT,
+    background=True,
+):
+    """ Run a jfx_bridge_ida server (forever)
+        server_host - what address the server should listen on
+        server_port - what port the server should listen on
+        response_timeout - default timeout in seconds before a response is treated as "failed"
+        background - false to run the server in this thread (will lock up GUI), true for a new thread
+    """
+    server = bridge.BridgeServer(
+        server_host=server_host,
+        server_port=server_port,
+        loglevel=logging.INFO,
+        response_timeout=response_timeout,
+    )
+
+    if background:
+        server.start()
+        print(
+            "Server launching in background - will continue to run after launch script finishes...\n"
+        )
+    else:
+        server.run()
+
+
+def run_script_across_bridge(script_file, python="python", argstring=""):
+    """ Spin up a jfx_bridge_ida_Server and spawn the script in external python to connect back to it. Useful in scripts being triggered from
+        inside an older IDA that's stuck in python2 or 32-bit python.
+
+        The called script needs to handle the --connect_to_host and --connect_to_port command-line arguments and use them to start
+        a jfx_bridge_ida client to talk back to the server.
+
+        Specify python to control what the script gets run with. Defaults to whatever python is in the shell - if changing, specify a path
+        or name the shell can find.
+        Specify argstring to pass further arguments to the script when it starts up.
+    """
+
+    # spawn a jfx_bridge_ida server - use server port 0 to pick a random port
+    server = bridge.BridgeServer(
+        server_host="127.0.0.1", server_port=0, loglevel=logging.INFO
+    )
+    # start it running in a background thread
+    server.start()
+
+    try:
+        # work out where we're running the server
+        server_host, server_port = server.get_server_info()
+
+        print("Running " + script_file)
+
+        # spawn an external python process to run against it
+        try:
+            output = subprocess.check_output(
+                "{python} {script} --connect_to_host={host} --connect_to_port={port} {argstring}".format(
+                    python=python,
+                    script=script_file,
+                    host=server_host,
+                    port=server_port,
+                    argstring=argstring,
+                ),
+                stderr=subprocess.STDOUT,
+                shell=True,
+            )
+            print(output)
+        except subprocess.CalledProcessError as exc:
+            print("Failed ({}):{}".format(exc.returncode, exc.output))
+
+        print(script_file + " completed")
+
+    finally:
+        # when we're done with the script, shut down the server
+        server.shutdown()
+
+
 if __name__ == "__main__":
-    # breaks lots - wants to be called from main thread only - execute_sync
-    bridge.BridgeConn.local_call = local_call_execute_on_main_thread_wrapper
-    
-    threading.Thread(target=IDABridgeServer.run_server).start()
-    #IDABridgeServer.run_server()
-    # TODO how to patch for sark?
+    run_server(background=True)
