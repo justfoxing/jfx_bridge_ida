@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="jfx_bridge_ida",
-    version="0.0.1", #subprocess.check_output("git describe", shell=True).decode("utf-8").strip(),
+    version=subprocess.check_output("git describe", shell=True).decode("utf-8").strip(),
     author="justfoxing",
     author_email="justfoxingprojects@gmail.com",
     description="RPC bridge from Python to IDA Python interpreter",
