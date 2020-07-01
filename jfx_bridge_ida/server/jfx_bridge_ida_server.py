@@ -26,7 +26,7 @@ class WrapperReturn(object):
 def wrapper_local_call_on_main_thread(return_object, bridge_conn, args_dict):
     """ Wrapper to handle calling local_call on the main IDA thread after being run through execute_sync.
         Will execute the real local_call and pass the result back to the return_object provided """
-    return_object.result = REAL_LOCAL_CALL(bridge_conn, args_dict)
+    return_object.result = bridge.BridgeConn.REAL_LOCAL_CALL(bridge_conn, args_dict)
 
     return 0
 
@@ -45,12 +45,15 @@ def hook_local_call_execute_on_main_thread(bridge_conn, args_dict):
     # Note: there's a few different options for MFF_ flags - MFF_FAST seems to work, but I'm as yet not sure if it has thread safety issues
     idaapi.execute_sync(bound_callable, idaapi.MFF_FAST)
 
-    # and we're done!
+    # and we're done! (Note: this behaviour matches jfx_bridge >= 0.3.1, where serializing the results to a dictionary is handled centrally)
     return return_object.result
 
 
 # record what the real local_call is, then replace it with the hook
-REAL_LOCAL_CALL = bridge.BridgeConn.local_call
+if not hasattr(bridge.BridgeConn, "REAL_LOCAL_CALL"):
+    # hasn't been hooked before, so save the real call. Only do it once, so we don't hook the hook when we restart
+    bridge.BridgeConn.REAL_LOCAL_CALL = bridge.BridgeConn.local_call
+    
 bridge.BridgeConn.local_call = hook_local_call_execute_on_main_thread
 
 
