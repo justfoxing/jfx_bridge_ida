@@ -45,7 +45,7 @@ def hook_local_call_execute_on_main_thread(bridge_conn, args_dict):
     # Note: there's a few different options for MFF_ flags - MFF_FAST seems to work, but I'm as yet not sure if it has thread safety issues
     idaapi.execute_sync(bound_callable, idaapi.MFF_FAST)
 
-    # and we're done!
+    # and we're done! (Note: this behaviour matches jfx_bridge >= 0.3.1, where serializing the results to a dictionary is handled centrally)
     return return_object.result
 
 
