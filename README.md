@@ -7,7 +7,7 @@ Like [Ghidra Bridge](https://github.com/justfoxing/ghidra_bridge/), IDABridge is
 How to use for IDA
 ======================
 
-## Install the IDABridge package and server scripts
+## Install the jfx_bridge_ida package and server scripts
 1. Install the jfx_bridge_ida package (packaged at https://pypi.org/project/jfx-bridge-ida/):
 ```
 pip install jfx_bridge_ida
@@ -20,7 +20,7 @@ python -m jfx_bridge_ida.install_server ~/.ida_scripts
 
 3. If you're using IDA with a different python environment (e.g., using python2), install the jfx-bridge package into that python environment. That'll look something like the following:
 ```
-python2 -m pip install jfx-bridge
+python2 -m pip install jfx_bridge
 ```
 
 ## Start Server
@@ -51,11 +51,11 @@ print(sark.Line())
 
 Security warning
 =====================
-Be aware that when running, an IDABridge server effectively provides code execution as a service. If an attacker is able to talk to the port IDABridge is running on, they can trivially gain execution with the privileges IDA is run with. 
+Be aware that when running, an IDABridge server effectively provides code execution as a service. If an attacker is able to talk to the port the bridge server is running on, they can trivially gain execution with the privileges IDA is run with. 
 
-Also be aware that the protocol used for sending and receiving IDABridge messages is unencrypted and unverified - a person-in-the-middle attack would allow complete control of the commands and responses, again providing trivial code execution on the server (and with a little more work, on the client). 
+Also be aware that the protocol used for sending and receiving bridge messages is unencrypted and unverified - a person-in-the-middle attack would allow complete control of the commands and responses, again providing trivial code execution on the server (and with a little more work, on the client). 
 
-By default, the IDABridge server only listens on localhost to slightly reduce the attack surface. Only listen on external network addresses if you're confident you're on a network where it is safe to do so. Additionally, it is still possible for attackers to send messages to localhost (e.g., via malicious javascript in the browser, or by exploiting a different process and attacking IDABridge to elevate privileges). You can mitigate this risk by running IDABridge from a IDA server with reduced permissions (a non-admin user, or inside a container), by only running it when needed, or by running on non-network connected systems.
+By default, the server only listens on localhost to slightly reduce the attack surface. Only listen on external network addresses if you're confident you're on a network where it is safe to do so. Additionally, it is still possible for attackers to send messages to localhost (e.g., via malicious javascript in the browser, or by exploiting a different process and attacking the bridge to elevate privileges). You can mitigate this risk by running the bridge server from a IDA process with reduced permissions (a non-admin user, or inside a container), by only running it when needed, or by running on non-network connected systems.
 
 Remote eval
 =====================
