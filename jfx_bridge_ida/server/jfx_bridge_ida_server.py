@@ -13,7 +13,7 @@ import idaapi
 # the idaapi.execute_sync function to carry this out, which takes a python callable to run, and returns an
 # int.
 #
-# To handle this, we hook the local_call function in the bridge, and wrap whatever we were going to call in
+# To handle this, we hook the local_call/local_eval functions in the bridge, and wrap whatever we were going to call in
 # a bound callable that provides a way to return an arbitrary result, then pass that bound callable to execute_sync.
 
 
@@ -23,10 +23,10 @@ class WrapperReturn(object):
     result = None
 
 
-def wrapper_local_call_on_main_thread(return_object, bridge_conn, args_dict):
-    """ Wrapper to handle calling local_call on the main IDA thread after being run through execute_sync.
-        Will execute the real local_call and pass the result back to the return_object provided """
-    return_object.result = bridge.BridgeConn.REAL_LOCAL_CALL(bridge_conn, args_dict)
+def wrapper_execute_on_main_thread(prepped_function, return_object):
+    """ Wrapper to handle calling the prepped function (with bound arguments) on the main IDA thread after being run through execute_sync.
+        Will execute the prepped function and pass the result back to the return_object provided """
+    return_object.result = prepped_function()
 
     return 0
 
@@ -36,24 +36,58 @@ def hook_local_call_execute_on_main_thread(bridge_conn, args_dict):
     # where we get our result
     return_object = WrapperReturn()
 
-    # bind it into the callable wrapper
-    bound_callable = functools.partial(
-        wrapper_local_call_on_main_thread, return_object, bridge_conn, args_dict
+    # first, bind the real local call function to the arguments
+    prepped_function = functools.partial(
+        bridge.BridgeConn.REAL_LOCAL_CALL, bridge_conn, args_dict
+    )
+
+    # then bind it into the callable wrapper we'll pass to execute sync, along with the return object
+    prepped_wrapper = functools.partial(
+        wrapper_execute_on_main_thread, prepped_function, return_object
     )
 
     # run it on the main thread - we use MFF_WRITE to make sure that regardless of whether the operation reads/writes/ignores the database, it'll be fine
-    idaapi.execute_sync(bound_callable, idaapi.MFF_WRITE)
+    idaapi.execute_sync(prepped_wrapper, idaapi.MFF_WRITE)
 
     # and we're done! (Note: this behaviour matches jfx_bridge >= 0.3.1, where serializing the results to a dictionary is handled centrally)
     return return_object.result
 
 
-# record what the real local_call is, then replace it with the hook
-if not hasattr(bridge.BridgeConn, "REAL_LOCAL_CALL"):
+def hook_local_eval_execute_on_main_thread(bridge_conn, args_dict):
+    """ Hook the real local_eval and handle generating a bound callable that will give us an arbitrary result back """
+    # TODO extract kwargs to specify MFF level, or not to execute_sync
+
+    # where we get our result
+    return_object = WrapperReturn()
+
+    # first, bind the real local eval function to the arguments
+    prepped_function = functools.partial(
+        bridge.BridgeConn.REAL_LOCAL_EVAL, bridge_conn, args_dict
+    )
+
+    # then bind it into the callable wrapper we'll pass to execute sync, along with the return object
+    prepped_wrapper = functools.partial(
+        wrapper_execute_on_main_thread, prepped_function, return_object
+    )
+
+    # run it on the main thread - we use MFF_WRITE to make sure that regardless of whether the operation reads/writes/ignores the database, it'll be fine
+    idaapi.execute_sync(prepped_wrapper, idaapi.MFF_WRITE)
+    # TODO if we can specify MFF level and do nowait, allow for returning the no wait result
+
+    # and we're done! (Note: this behaviour matches jfx_bridge >= 0.3.1, where serializing the results to a dictionary is handled centrally)
+    return return_object.result
+
+
+# record what the real local_call/local_evals are, then replace them with hooks
+if not hasattr(bridge.BridgeConn, "REAL_LOCAL_EVAL"):
     # hasn't been hooked before, so save the real call. Only do it once, so we don't hook the hook when we restart
     bridge.BridgeConn.REAL_LOCAL_CALL = bridge.BridgeConn.local_call
-    
+if not hasattr(bridge.BridgeConn, "REAL_LOCAL_EVAL"):
+    # hasn't been hooked before, so save the real call. Only do it once, so we don't hook the hook when we restart
+    bridge.BridgeConn.REAL_LOCAL_EVAL = bridge.BridgeConn.local_eval
+
 bridge.BridgeConn.local_call = hook_local_call_execute_on_main_thread
+bridge.BridgeConn.local_eval = hook_local_eval_execute_on_main_thread
 
 
 def run_server(
