@@ -4,6 +4,17 @@ IDA's a great reverse engineering tool, and I like scripting my RE as much as po
 
 Like [Ghidra Bridge](https://github.com/justfoxing/ghidra_bridge/), IDABridge is a Python RPC bridge that aims to break you out of the IDA Python environment, so you can more easily integrate with tools like IPython and Jupyter, while being as transparent as possible so you don't have to rewrite all of your scripts.
 
+Table of contents
+======================
+* [How to use for IDA](#how-to-use-for-ida)
+* [Security warning](#security-warning)
+* [Remote eval](#remote-eval)
+* [Long-running commands](#long-running-commands)
+* [Remote imports](#remote-imports)
+* [How it works](#how-it-works)
+* [Tested](#tested)
+* [Contributors](#contributors)
+
 How to use for IDA
 ======================
 
@@ -64,8 +75,8 @@ IDABridge is designed to be transparent, to allow easy porting of non-bridged sc
 The following example demonstrates getting a list of all the names of all the functions in a binary:
 ```python
 import jfx_bridge_ida 
-b = jfx_bridge_ida.IDABridge(namespace=globals())
-name_list = b.bridge.remote_eval("[ f.name for f in sark.functions()]")
+b = jfx_bridge_ida.IDABridge()
+name_list = b.bridge.remote_eval("[f.name for f in sark.functions()]")
 ```
 
 If your evaluation is going to take some time, you might need to use the timeout_override argument to increase how long the bridge will wait before deciding things have gone wrong.
@@ -73,11 +84,25 @@ If your evaluation is going to take some time, you might need to use the timeout
 If you need to supply an argument for the remote evaluation, you can provide arbitrary keyword arguments to the remote_eval function which will be passed into the evaluation context as local variables. The following argument passes in a function:
 ```python
 import jfx_bridge_ida 
-b = jfx_bridge_ida.IDABridge(namespace=globals())
+b = jfx_bridge_ida.IDABridge()
 func = b.get_sark().Function()
-calls_list = b.bridge.remote_eval("[ sark.Function(x.to).name for x in f.xrefs_from ]", f=func)
+calls_list = b.bridge.remote_eval("[sark.Function(x.to).name for x in f.xrefs_from]", f=func)
 ```
 As a simplification, note also that the evaluation context has the same globals loaded into the \_\_main\_\_ of the script that started the server - in the case of the IDABridge server, these include the idaapi, idautils and idc module, and sark if it was installed when the server was started.
+
+Long-running commands
+=====================
+If you have a particularly slow call in your script, it may hit the response timeout that the bridge uses to make sure the connection hasn't broken. If this happens, you'll see something like `Exception: Didn't receive response <UUID> before timeout`.
+
+There are two options to increase the timeout. When creating the bridge, you can set a timeout value in seconds with the response_timeout argument (e.g., `b = jfx_bridge_ida.IDABridge(response_timeout=20)`) which will apply to all commands run across the bridge. Alternatively, if you just want to change the timeout for one command, you can use remote_eval as mentioned above, with the timeout_override argument (e.g., `b.bridge.remote_eval("[f.name for f in sark.functions()]", timeout_override=20)`). If you use the value -1 for either of these arguments, the response timeout will be disabled and the bridge will wait forever for your response to come back - note that this can cause your script to hang if the bridge runs into problems.
+
+Remote imports
+=====================
+If you want to import modules from the IDA-side, you have a range of options (in order of most-recommended to least):
+* If you're using one of the main IDA api modules (idaapi, idautils, idc, sark), by default IDABridge grabs thes from the remote-side and copies them into sys.modules when the IDABridge is created, so you can do `import idaapi` after the bridge is created. If that causes problems, you can disable that functionality with the do_import argument when the bridge is created (e.g., `b = jfx_bridge_ida.IDABridge(do_import=False)`.
+* Alternatively, if you're using one of the main IDA api modules and you don't want to use the import functionality, IDABridge provides get functions for these (e.g., `idaapi = b.get_idaapi()`). You can also specify do_import=True on these get functions to embed the modules into sys.modules and allow importing as above for that specific module.
+* If you're not after one of the main IDA modules (e.g., you want something like ida_kernwin), you can use remote_import to get a BridgedModule back directly (e.g., `ida_kernwin = b.remote_import("ida_kernwin")`). This has the advantage that you have exact control over getting the remote module (and can get remote modules with the same name as local modules) and when it's released, but it does take a little more work than the following method.
+* Alternatively, you can specify hook_import=True when creating the bridge (e.g., `b = jfx_bridge_ida.IDABridge(hook_import=True)`). This will add a hook to the import machinery such that, if nothing else can fill the import, the bridge will try to handle it. This allows you to just use the standard `from ida_kernwin import get_screen_ea` syntax after you've connected the bridge. This has the advantage that it may be a little easier to use (you still have to make sure the imports happen AFTER the bridge is connected), but it doesn't allow you to import remote modules with the same name as local modules (the local imports take precedence) and it places the remote modules in sys.modules as proper imports, so they and the bridge will likely stay loaded until the process terminates. Additionally, multiple bridges with hook_import=True will attempt to resolve imports in the order they were connected, which may not be the behaviour you want.
 
 How it works
 =====================

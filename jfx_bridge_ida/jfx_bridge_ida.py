@@ -21,6 +21,7 @@ class IDABridge:
         loglevel=None,
         response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT,
         do_import=True,
+        hook_import=False,
     ):
         """ Set up a bridge. Default settings connect to the default jfx_bridge_ida server
 
@@ -29,12 +30,17 @@ class IDABridge:
         response_timeout is how long to wait for a response before throwing an exception, in seconds
         
         If do_import is true, gets the remote idaapi, idc and idautils modules and loads them into sys.modules,
-        to make importing sark locally easy"""
+        to make importing sark locally easy
+        
+        Set hook_import to True to use the jfx_bridge import hooking feature and allow easy importing. This may cause issues
+        with running multiple IDABridges in the same process.
+        """
         self.bridge = bridge.BridgeClient(
             connect_to_host=connect_to_host,
             connect_to_port=connect_to_port,
             loglevel=loglevel,
             response_timeout=response_timeout,
+            hook_import=hook_import
         )
 
         if do_import:
