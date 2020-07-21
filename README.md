@@ -70,13 +70,13 @@ By default, the server only listens on localhost to slightly reduce the attack s
 
 Remote eval
 =====================
-IDABridge is designed to be transparent, to allow easy porting of non-bridged scripts without too many changes. However, if you're happy to make changes, and you run into slowdowns caused by running lots of remote queries (e.g., something like `for f in sark.functions(): doSomething()` can be quite slow with a large number of functions as each function will result in a message across the bridge), you can make use of the bridge.remote_eval() function to ask for the result to be evaluated on the bridge server all at once, which will require only a single message roundtrip.
+IDABridge is designed to be transparent, to allow easy porting of non-bridged scripts without too many changes. However, if you're happy to make changes, and you run into slowdowns caused by running lots of remote queries (e.g., something like `for f in sark.functions(): doSomething()` can be quite slow with a large number of functions as each function will result in a message across the bridge), you can make use of the remote_eval() function to ask for the result to be evaluated on the bridge server all at once, which will require only a single message roundtrip.
 
 The following example demonstrates getting a list of all the names of all the functions in a binary:
 ```python
 import jfx_bridge_ida 
 b = jfx_bridge_ida.IDABridge()
-name_list = b.bridge.remote_eval("[f.name for f in sark.functions()]")
+name_list = b.remote_eval("[f.name for f in sark.functions()]")
 ```
 
 If your evaluation is going to take some time, you might need to use the timeout_override argument to increase how long the bridge will wait before deciding things have gone wrong.
@@ -86,7 +86,7 @@ If you need to supply an argument for the remote evaluation, you can provide arb
 import jfx_bridge_ida 
 b = jfx_bridge_ida.IDABridge()
 func = b.get_sark().Function()
-calls_list = b.bridge.remote_eval("[sark.Function(x.to).name for x in f.xrefs_from]", f=func)
+calls_list = b.remote_eval("[sark.Function(x.to).name for x in f.xrefs_from]", f=func)
 ```
 As a simplification, note also that the evaluation context has the same globals loaded into the \_\_main\_\_ of the script that started the server - in the case of the IDABridge server, these include the idaapi, idautils and idc module, and sark if it was installed when the server was started.
 
@@ -94,7 +94,7 @@ Long-running commands
 =====================
 If you have a particularly slow call in your script, it may hit the response timeout that the bridge uses to make sure the connection hasn't broken. If this happens, you'll see something like `Exception: Didn't receive response <UUID> before timeout`.
 
-There are two options to increase the timeout. When creating the bridge, you can set a timeout value in seconds with the response_timeout argument (e.g., `b = jfx_bridge_ida.IDABridge(response_timeout=20)`) which will apply to all commands run across the bridge. Alternatively, if you just want to change the timeout for one command, you can use remote_eval as mentioned above, with the timeout_override argument (e.g., `b.bridge.remote_eval("[f.name for f in sark.functions()]", timeout_override=20)`). If you use the value -1 for either of these arguments, the response timeout will be disabled and the bridge will wait forever for your response to come back - note that this can cause your script to hang if the bridge runs into problems.
+There are two options to increase the timeout. When creating the bridge, you can set a timeout value in seconds with the response_timeout argument (e.g., `b = jfx_bridge_ida.IDABridge(response_timeout=20)`) which will apply to all commands run across the bridge. Alternatively, if you just want to change the timeout for one command, you can use remote_eval as mentioned above, with the timeout_override argument (e.g., `b.remote_eval("[f.name for f in sark.functions()]", timeout_override=20)`). If you use the value -1 for either of these arguments, the response timeout will be disabled and the bridge will wait forever for your response to come back - note that this can cause your script to hang if the bridge runs into problems.
 
 Remote imports
 =====================

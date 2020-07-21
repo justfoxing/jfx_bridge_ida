@@ -8,7 +8,7 @@ from jfx_bridge import bridge
 from .server.jfx_bridge_ida_port import DEFAULT_SERVER_PORT
 
 
-class IDABridge:
+class IDABridge(bridge.BridgeClient):
     idc = None
     idaapi = None
     idautils = None
@@ -35,12 +35,12 @@ class IDABridge:
         Set hook_import to True to use the jfx_bridge import hooking feature and allow easy importing. This may cause issues
         with running multiple IDABridges in the same process.
         """
-        self.bridge = bridge.BridgeClient(
+        super().__init__(
             connect_to_host=connect_to_host,
             connect_to_port=connect_to_port,
             loglevel=loglevel,
             response_timeout=response_timeout,
-            hook_import=hook_import
+            hook_import=hook_import,
         )
 
         if do_import:
@@ -53,7 +53,7 @@ class IDABridge:
         If do_import is true, store it into sys.modules so other things can import it easily
          - you probably don't want this, use do_import when setting up the bridge instead """
         if self.idaapi is None:
-            self.idaapi = self.bridge.remote_import("idaapi")
+            self.idaapi = self.remote_import("idaapi")
 
         if do_import:
             sys.modules["idaapi"] = self.idaapi
@@ -65,7 +65,7 @@ class IDABridge:
         If do_import is true, store it into sys.modules so other things can import it easily
         - you probably don't want this, use do_import when setting up the bridge instead """
         if self.idc is None:
-            self.idc = self.bridge.remote_import("idc")
+            self.idc = self.remote_import("idc")
 
         if do_import:
             sys.modules["idc"] = self.idc
@@ -77,7 +77,7 @@ class IDABridge:
         If do_import is true, store it into sys.modules so other things can import it easily
         - you probably don't want this, use do_import when setting up the bridge instead """
         if self.idautils is None:
-            self.idautils = self.bridge.remote_import("idautils")
+            self.idautils = self.remote_import("idautils")
 
         if do_import:
             sys.modules["idautils"] = self.idautils
@@ -88,7 +88,7 @@ class IDABridge:
         """ Import sark from the remote IDA context 
             If do_import is true, store it into sys.modules so other things can import it easily - you probably don't want this """
         if self.sark is None:
-            self.sark = self.bridge.remote_import("sark")
+            self.sark = self.remote_import("sark")
 
         if do_import:
             sys.modules["sark"] = self.sark
