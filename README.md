@@ -11,6 +11,7 @@ Table of contents
 * [Remote eval](#remote-eval)
 * [Long-running commands](#long-running-commands)
 * [Remote imports](#remote-imports)
+* [Thread safety, callbacks and avoiding blocking](#thread-safety-callbacks-and-avoiding-blocking)
 * [How it works](#how-it-works)
 * [Tested](#tested)
 * [Contributors](#contributors)
@@ -103,6 +104,27 @@ If you want to import modules from the IDA-side, you have a range of options (in
 * Alternatively, if you're using one of the main IDA api modules and you don't want to use the import functionality, IDABridge provides get functions for these (e.g., `idaapi = b.get_idaapi()`). You can also specify do_import=True on these get functions to embed the modules into sys.modules and allow importing as above for that specific module.
 * If you're not after one of the main IDA modules (e.g., you want something like ida_kernwin), you can use remote_import to get a BridgedModule back directly (e.g., `ida_kernwin = b.remote_import("ida_kernwin")`). This has the advantage that you have exact control over getting the remote module (and can get remote modules with the same name as local modules) and when it's released, but it does take a little more work than the following method.
 * Alternatively, you can specify hook_import=True when creating the bridge (e.g., `b = jfx_bridge_ida.IDABridge(hook_import=True)`). This will add a hook to the import machinery such that, if nothing else can fill the import, the bridge will try to handle it. This allows you to just use the standard `from ida_kernwin import get_screen_ea` syntax after you've connected the bridge. This has the advantage that it may be a little easier to use (you still have to make sure the imports happen AFTER the bridge is connected), but it doesn't allow you to import remote modules with the same name as local modules (the local imports take precedence) and it places the remote modules in sys.modules as proper imports, so they and the bridge will likely stay loaded until the process terminates. Additionally, multiple bridges with hook_import=True will attempt to resolve imports in the order they were connected, which may not be the behaviour you want.
+
+Thread safety, callbacks and avoiding blocking
+=====================
+As of IDA 7.2, all APIs not explicitly marked THREAD_SAFE have to be called from the main thread in IDA. If they aren't, IDA throws a `RuntimeError: Function can be called from the main thread only`. 
+
+However, the IDABridge server can't run on the main thread, or you wouldn't be able to use IDA while it was running. To handle this, we inspect call commands being sent over the bridge to see if they refer to IDA APIs. If they do, they're wrapped in the IDA execute_sync() function, which will ship them off to the main thread. All remote_eval commands are also shipped to the main thread - it's too hard to inspect them to see if they use IDA APIs, so we just assume they all do.
+
+All of this should happen transparently, so you shouldn't need to make any changes to your code - with one exception. If your local code is being called from IDA over the bridge (e.g., you've subclassed idaapi.UI_Hooks and overridden the screen_ea_changed() function to get callbacks when the visible address changes), you MUST allow that call to return BEFORE you call another IDA function. 
+
+This is because IDA will call your local code from the main thread, then block waiting for a response. If your local code then attempts to call an IDA function over the bridge, it will need to get on the main thread to do so - but the main thread is still held by IDA code that called you. This will lead to a `Didn't receive response <UUID> before timeout` exception. 
+
+If you need to call an IDA function, trigger a different thread to do it and allow the original call to return quickly. Using a different thread is also recommended if you need to pause and ask the user for something or do some intensive computation. Generally, the best practice is return calls from IDA as quickly as possible - the main thread is also responsible for the IDA UI, so if it's spending a lot of time waiting for responses across the bridge, the UI will be slow or unusable.
+
+Note that this doesn't apply to local \_\_init\_\_ code on a class that inherits from an IDA class - the bridge recognises the \_\_\_init\_\_ will run on the non-IDA side. So the following will work fine:
+```python
+class X(idaapi.UI_Hooks): 
+    def __init__(self):
+        idaapi.UI_Hooks.__init__(self)
+```
+
+Finally, the call inspection logic is pretty gnarly, so it's possible that something has been missed. If you see a `RuntimeError: Function can be called from the main thread only` when you do a call, please open an issue on Github with the code that causes it so we can get it fixed.
 
 How it works
 =====================
