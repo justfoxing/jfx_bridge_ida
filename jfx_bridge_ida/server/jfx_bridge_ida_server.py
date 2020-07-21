@@ -7,6 +7,14 @@ from jfx_bridge import bridge
 from jfx_bridge_ida_port import DEFAULT_SERVER_PORT
 
 import idaapi
+# pull in idc and idautils so they're available for remote_evals without extra work
+import idc
+import idautils
+# try to do the same thing with sark, but it's fine if it's not present
+try:
+    import sark
+except ImportError:
+    pass
 
 # IDA specific hooking
 # IDA 7.2 requires all APIs not explicitly marked THREAD_SAFE to be called from the main thread. It provides
