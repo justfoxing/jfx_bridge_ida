@@ -22,6 +22,8 @@ class IDABridge(bridge.BridgeClient):
         response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT,
         do_import=True,
         hook_import=False,
+        record_stats=False,
+        **kwargs
     ):
         """ Set up a bridge. Default settings connect to the default jfx_bridge_ida server
 
@@ -34,6 +36,8 @@ class IDABridge(bridge.BridgeClient):
         
         Set hook_import to True to use the jfx_bridge import hooking feature and allow easy importing. This may cause issues
         with running multiple IDABridges in the same process.
+        
+        Set record_stats to True to record statistics about the bridge to help improve performance. Get the stats with the get_stats() function
         """
         super().__init__(
             connect_to_host=connect_to_host,
@@ -41,6 +45,8 @@ class IDABridge(bridge.BridgeClient):
             loglevel=loglevel,
             response_timeout=response_timeout,
             hook_import=hook_import,
+            record_stats=record_stats,
+            **kwargs
         )
 
         if do_import:
