@@ -20,8 +20,6 @@ def print_stats(func):
         )
 
     return wrapper
-
-
 class TestIDABridge(unittest.TestCase):
     """ Assumes there's an IDA bridge server running at DEFAULT_SERVER_PORT """
 
@@ -50,9 +48,16 @@ class TestIDABridge(unittest.TestCase):
         idc = self.test_bridge.get_idc()
         idautils = self.test_bridge.get_idautils()
 
+        # pre IDA 7 compat
+        get_func_name_fn_name = (
+            "get_func_name" if "get_func_name" in dir(idc) else "GetFunctionName"
+        )
+        segment_end_fn_name = "get_segm_end" if "get_segm_end" in dir(idc) else "SegEnd"
         for segea in idautils.Segments():
             self.test_bridge.bridge.remote_eval(
-                "[(funcea, idc.get_func_name(funcea)) for funcea in idautils.Functions(segea, idc.get_segm_end(segea))]",
+                "[(funcea, idc.{}(funcea)) for funcea in idautils.Functions(segea, idc.{}(segea))]".format(
+                    get_func_name_fn_name, segment_end_fn_name
+                ),
                 segea=segea,
                 timeout_override=20,
             )
@@ -82,7 +87,10 @@ class TestIDABridge(unittest.TestCase):
 
     @print_stats
     def test_callback(self):
-        """ Test we can get a callback """
+        """ Test we can get a callback 
+        
+        Expected failure on pre 7.2 - screen_ea_changed doesn't exist
+        """
         idaapi = self.test_bridge.get_idaapi()
 
         class TestListener(idaapi.UI_Hooks):
@@ -109,7 +117,10 @@ class TestIDABridge(unittest.TestCase):
 
     @print_stats
     def test_type_instantiate(self):
-        """ check we can instantiate an IDA type that isn't threadsafe in its init """
+        """ check we can instantiate an IDA type that isn't threadsafe in its init 
+        
+        Expected failure in IDA pre 7 - no idadex. Haven't found another class with a non-threadsafe init
+        """
         idadex = self.test_bridge.remote_import("idadex")
         try:
             idadex.Dex()
@@ -120,7 +131,10 @@ class TestIDABridge(unittest.TestCase):
 
     @print_stats
     def test_type_instantiate_inherited_but_non_overridden_init(self):
-        """ check we can instantiate an type we've created from an IDA type that isn't threadsafe in its init, and we haven't overridden that init """
+        """ check we can instantiate an type we've created from an IDA type that isn't threadsafe in its init, and we haven't overridden that init 
+        
+        Expected failure in IDA pre 7 - no idadex. Haven't found another class with a non-threadsafe init
+        """
         idadex = self.test_bridge.remote_import("idadex")
 
         class TestDex(idadex.Dex):
@@ -136,7 +150,10 @@ class TestIDABridge(unittest.TestCase):
 
     @print_stats
     def test_type_instantiate_inherited_with_overridden_init(self):
-        """ check we can instantiate an type we've created from an IDA type that isn't threadsafe in its init, we've overridden that init, but we're still calling it in our init """
+        """ check we can instantiate an type we've created from an IDA type that isn't threadsafe in its init, we've overridden that init, but we're still calling it in our init 
+        
+        Expected failure in IDA pre 7 - no idadex. Haven't found another class with a non-threadsafe init
+        """
         idadex = self.test_bridge.remote_import("idadex")
 
         parent = self
