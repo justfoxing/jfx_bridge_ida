@@ -100,7 +100,7 @@ def should_execute_sync(target_callable):
             if isinstance(target_callable, functools.partial):
                 # partials - get the module from the function that's been wrapped
                 module = inspect.getmodule(target_callable.func)
-            elif isinstance(target_callable, types.MethodWrapperType):
+            elif "method-wrapper" in str(type(target_callable)):
                 # bound to an instance of an object (in __self__)
                 obj = target_callable.__self__
                 if isinstance(obj, types.GeneratorType):
@@ -108,14 +108,16 @@ def should_execute_sync(target_callable):
                     module = os.path.basename(obj.gi_code.co_filename).split(".")[0]
                 else:  # expect the object to have __module__
                     module = inspect.getmodule(target_callable)
-            elif isinstance(target_callable, types.WrapperDescriptorType):
+            elif "wrapper_descriptor" in str(type(target_callable)):
                 # slot wrappers for things like base object implementation of __str__ - has a class in __objclass__
                 module = inspect.getmodule(target_callable.__objclass__)
 
         if module is None:
             if isinstance(target_callable, type):
                 if hasattr(target_callable, "__module__"):
-                    if isinstance(target_callable.__module__, str):
+                    if isinstance(
+                        target_callable.__module__, bridge.STRING_TYPES
+                    ):  # if python2: unicode as well as str
                         # this is a type created for a remote bridge (e.g., inheriting from a local type)
                         # check to see if any of the bases are IDA related
                         ida_parent = False
