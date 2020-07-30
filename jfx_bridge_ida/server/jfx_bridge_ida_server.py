@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import types
+import sys
 
 from jfx_bridge import bridge
 from jfx_bridge_ida_port import DEFAULT_SERVER_PORT
@@ -168,6 +169,22 @@ def hook_local_call(bridge_conn, target_callable, *args, **kwargs):
         execute_sync_flag = idaapi.MFF_WRITE
 
     # Possible future - pull an execute sync flag kwarg from the callable args, to allow explicitly marking a particular call as MFF_READ or not needing execute sync
+
+    # if python2, make sure any arguments and keywords that are unicode are converted to plain strings
+    if sys.version_info.major == 2:
+        new_args = []
+        for arg in args:
+            if isinstance(arg, unicode):
+                arg = str(arg)
+            new_args.append(arg)
+        args = new_args
+
+        new_kwargs = {}
+        for k, v in kwargs.items():
+            if isinstance(v, unicode):
+                v = str(v)
+            new_kwargs[k] = v
+        kwargs = new_kwargs
 
     # bind the target to the arguments
     prepped_function = functools.partial(target_callable, *args, **kwargs)
