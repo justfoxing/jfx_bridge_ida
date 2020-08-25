@@ -7,6 +7,8 @@ import jfx_bridge
 import jfx_bridge_ida
 from jfx_bridge_ida.server import jfx_bridge_ida_port
 
+from . import test_module
+
 
 def print_stats(func):
     @functools.wraps(func)
@@ -20,6 +22,8 @@ def print_stats(func):
         )
 
     return wrapper
+
+
 class TestIDABridge(unittest.TestCase):
     """ Assumes there's an IDA bridge server running at DEFAULT_SERVER_PORT """
 
@@ -170,3 +174,52 @@ class TestIDABridge(unittest.TestCase):
                     )
 
         t = TestDex()
+
+    @print_stats
+    def test_remoteify_function_using_idaapi(self):
+        """ Test that we can remoteify a function using something from the idaapi, that should run into execute_sync problems"""
+
+        def foobar():
+            return idaapi.get_screen_ea()
+
+        remote_foobar = self.test_bridge.remoteify(foobar)
+
+        self.assertIsNotNone(remote_foobar())
+
+    @print_stats
+    def test_remoteify_function_with_imports(self):
+        """ Test that we can remoteify a function that uses imported modules, that should run into execute_sync problems """
+
+        def importer():
+            from ida_kernwin import get_screen_ea
+
+            return get_screen_ea()
+
+        remote_importer = self.test_bridge.remoteify(importer)
+        self.assertIsNotNone(remote_importer())
+
+    @print_stats
+    def test_remoteify_class(self):
+        """ Test that we can remoteify a class, that should run into execute_sync problems"""
+
+        class CLZ:
+            def __init__(self):
+                self.ea = idaapi.get_screen_ea()
+
+            def get_fns(self):
+                import idautils
+
+                return list(idautils.Functions())
+
+        remote_clz = self.test_bridge.remoteify(CLZ)
+
+        rc = remote_clz()
+        self.assertTrue(0 < len(rc.get_fns()))
+
+    @print_stats
+    def test_remoteify_module(self):
+        """ Check we can remoteify a module, that should run into execute_sync problems (both when importing, and when running functions) """
+        remote_test_module = self.test_bridge.remoteify(test_module)
+
+        self.assertIsNotNone(remote_test_module.run())
+        self.assertIsNotNone(remote_test_module.TestingClass())

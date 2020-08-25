@@ -2,7 +2,11 @@ JFX Bridge for IDA (IDABridge)
 =====================
 IDA's a great reverse engineering tool, and I like scripting my RE as much as possible.
 
-Like [Ghidra Bridge](https://github.com/justfoxing/ghidra_bridge/), IDABridge is a Python RPC bridge that aims to break you out of the IDA Python environment, so you can more easily integrate with tools like IPython and Jupyter, while being as transparent as possible so you don't have to rewrite all of your scripts.
+IDABridge is a Python RPC bridge that aims to break you out of the IDA Python environment, so you can more easily integrate with tools like IPython and Jupyter, while being as transparent as possible so you don't have to rewrite all of your scripts.
+
+If you like this, you might also be interested in the equivalents for other reverse-engineering tools:
+* [ghidra_bridge](https://github.com/justfoxing/ghidra_bridge) for Ghidra [![ghidra_bridge PyPi version](https://img.shields.io/pypi/v/ghidra_bridge.svg)](https://pypi.org/project/ghidra-bridge/)
+* [jfx_bridge_jeb](https://github.com/justfoxing/jfx_bridge_jeb) for JEB Decompiler [![jfx_bridge_jeb PyPi version](https://img.shields.io/pypi/v/jfx_bridge_jeb.svg)](https://pypi.org/project/jfx-bridge-jeb/)
 
 Table of contents
 ======================
@@ -109,7 +113,7 @@ Thread safety, callbacks and avoiding blocking
 =====================
 As of IDA 7.2, all APIs not explicitly marked THREAD_SAFE have to be called from the main thread in IDA. If they aren't, IDA throws a `RuntimeError: Function can be called from the main thread only`. 
 
-However, the IDABridge server can't run on the main thread, or you wouldn't be able to use IDA while it was running. To handle this, we inspect call commands being sent over the bridge to see if they refer to IDA APIs. If they do, they're wrapped in the IDA execute_sync() function, which will ship them off to the main thread. All remote_eval commands are also shipped to the main thread - it's too hard to inspect them to see if they use IDA APIs, so we just assume they all do.
+However, the IDABridge server can't run on the main thread, or you wouldn't be able to use IDA while it was running. To handle this, we inspect call commands being sent over the bridge to see if they refer to IDA APIs. If they do, they're wrapped in the IDA execute_sync() function, which will ship them off to the main thread. All remote_eval and remote_exec commands and calls to remoteify-ed objects are also shipped to the main thread - it's too hard to inspect them to see if they use IDA APIs, so we just assume they all do.
 
 All of this should happen transparently, so you shouldn't need to make any changes to your code - with one exception. If your local code is being called from IDA over the bridge (e.g., you've subclassed idaapi.UI_Hooks and overridden the screen_ea_changed() function to get callbacks when the visible address changes), you MUST allow that call to return BEFORE you call another IDA function. 
 
@@ -132,8 +136,10 @@ The actual bridge RPC code is implemented in [jfx-bridge](https://github.com/jus
 
 Tested
 =====================
+* IDA 7.4/Windows/Python 3.7.3->Python 3.7.3
+* IDA 7.2/Linux/Python 2.7.17->Python 3.7.2
 * IDA 6.9/Windows/Python 2.7.17->Python 3.7.2
-* IDA 7.2/Linux/2.7.17->Python 3.7.2
+
 
 Contributors
 =====================

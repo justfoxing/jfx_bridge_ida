@@ -83,8 +83,13 @@ NO_WRAP_LIST = [idaapi.execute_sync, idaapi.is_main_thread]
 def is_ida_module(module_name):
     """ Return true if it's an IDA-related module we want to execute_sync callables from
         sark, idaapi, idautils, idc - any ida_ (e.g., ida_kernwin), _ida_*.pyd, and a few edge cases (idadex.py, idc_bc695.py)
+        We include __main__, because that's where any functions/classes that have been remotify-ed end up
     """
-    return module_name.startswith(("_ida_", "ida", "idc")) or module_name == "sark"
+    return (
+        module_name.startswith(("_ida_", "ida", "idc"))
+        or module_name == "sark"
+        or module_name == "__main__"
+    )
 
 
 def should_execute_sync(target_callable):
@@ -113,34 +118,26 @@ def should_execute_sync(target_callable):
                 module = inspect.getmodule(target_callable.__objclass__)
 
         if module is None:
-            if isinstance(target_callable, type):
-                if hasattr(target_callable, "__module__"):
-                    if isinstance(
-                        target_callable.__module__, bridge.STRING_TYPES
-                    ):  # if python2: unicode as well as str
-                        # this is a type created for a remote bridge (e.g., inheriting from a local type)
-                        # check to see if any of the bases are IDA related
-                        ida_parent = False
-                        for base in target_callable.__bases__:
-                            base_module = inspect.getmodule(base)
-                            if base_module is not None and is_ida_module(
-                                base_module.__name__
-                            ):
-                                ida_parent = True
-                                break
+            if hasattr(target_callable, "__module__"):
+                if isinstance(
+                    target_callable.__module__, bridge.STRING_TYPES
+                ):  # if python2: unicode as well as str
+                    if isinstance(target_callable, type):
+                        # this is a type created for a remote bridge (e.g., inheriting from a local type, or in a remotify-ed module)
+                        # by default, we'll assume we should execute_sync. The only exception is if the __init__ is bridged - we need to let
+                        # that go back through the bridge normally, so we don't block if it in turn calls an IDA related function
+                        if (
+                            "__init__" in target_callable.__dict__
+                            and bridge._is_bridged_object(
+                                target_callable.__dict__["__init__"]
+                            )
+                        ):
+                            # has a bridged init, no execute_sync - if the bridged init calls an ida function, we can execute_sync that when it comes in
+                            return False
 
-                        # if they are, check to see if __init__ is overriden by a bridged function or not - if it isn't, instantiating the type could execute IDA code and we should execute_sync
-                        if ida_parent:
-                            if (
-                                not "__init__" in target_callable.__dict__
-                                or not bridge._is_bridged_object(
-                                    target_callable.__dict__["__init__"]
-                                )
-                            ):
-                                return True
-
-                        # not IDA-related base type, or has a bridged __init__ (if that calls an ida function, we can execute_sync that when it comes in)
-                        return False
+                        return True
+                    else:  # not a type - probably a function in a remotified module - assume we need to execute_sync
+                        return True
 
             # don't know what this is, complain
             raise Exception(
@@ -186,6 +183,15 @@ def hook_local_eval(bridge_conn, eval_expr, eval_globals, eval_locals):
     return call_execute_sync_and_get_result(prepped_function)
 
 
+def hook_local_exec(bridge_conn, exec_expr, exec_globals):
+    """ Hook the real local_exec and use execute_sync to run the exec on the main thread """
+
+    # first, bind the exec function to the arguments
+    prepped_function = functools.partial(exec, exec_expr, exec_globals)
+
+    return call_execute_sync_and_get_result(prepped_function)
+
+
 def run_server(
     server_host=bridge.DEFAULT_HOST,
     server_port=DEFAULT_SERVER_PORT,
@@ -205,6 +211,7 @@ def run_server(
         response_timeout=response_timeout,
         local_call_hook=hook_local_call,
         local_eval_hook=hook_local_eval,
+        local_exec_hook=hook_local_exec,
     )
 
     if background:
