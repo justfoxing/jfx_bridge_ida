@@ -200,11 +200,17 @@ def hook_local_eval(bridge_conn, eval_expr, eval_globals, eval_locals):
     return call_execute_sync_and_get_result(prepped_function)
 
 
+def exec_wrapper(exec_expr, exec_globals=None, exec_locals=None):
+    """ Wrap exec, to provide backcompat for python2, where it's not a function and so can't be bound
+        with functools.partial """
+    exec(exec_expr, exec_globals, exec_locals)
+
+
 def hook_local_exec(bridge_conn, exec_expr, exec_globals):
     """ Hook the real local_exec and use execute_sync to run the exec on the main thread """
 
     # first, bind the exec function to the arguments
-    prepped_function = functools.partial(exec, exec_expr, exec_globals)
+    prepped_function = functools.partial(exec_wrapper, exec_expr, exec_globals)
 
     return call_execute_sync_and_get_result(prepped_function)
 
