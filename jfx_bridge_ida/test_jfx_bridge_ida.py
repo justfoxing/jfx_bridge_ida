@@ -223,3 +223,14 @@ class TestIDABridge(unittest.TestCase):
 
         self.assertIsNotNone(remote_test_module.run())
         self.assertIsNotNone(remote_test_module.TestingClass())
+
+    @print_stats
+    def test_idaapi_with_string(self):
+        """ Check we can call an IDA function that takes a string, and that the string is correctly set to plain (only relevant for IDA running python 2) """
+        idautils = self.test_bridge.get_idautils()
+
+        f = next(idautils.Functions())
+
+        idaapi = self.test_bridge.get_idaapi()
+        idaapi.set_name(f, "test_name")  # should work without error
+
